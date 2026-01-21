@@ -3,6 +3,7 @@ import { supabase } from "./supabase.js";
 const billTypes = ["rent", "electric", "water", "internet"];
 const personIds = { 1: "Gab", 2: "Francine" };
 
+// Initial fetch of bills from DB
 async function fetchBills() {
   const { data: bills, error } = await supabase.from("bills").select("*");
   if (error) return console.error(error);
@@ -30,82 +31,86 @@ window.addBill = async function() {
   calculate();
 };
 
-// Calculate balances
+// Calculate balances with overpayment/debt shifting
 async function calculate() {
   const bills = await fetchBills();
   if (!bills) return;
 
-  // Initialize per-person data
-  const tableData = {
+  // Step 1: Initialize balances per person
+  const balances = {
     1: { rent: 0, electric: 0, water: 0, internet: 0 },
     2: { rent: 0, electric: 0, water: 0, internet: 0 },
   };
 
-  const personDebt = { 1: 0, 2: 0 }; // track carryover debt to next bill
+  // Step 2: Sum all bills
+  bills.forEach(b => {
+    const share = b.amount / 2;
+    if (b.paid_by === 1) {
+      balances[1][b.type] += 0; // Gab paid → owes nothing
+      balances[2][b.type] += share; // Francine owes her share
+    } else {
+      balances[1][b.type] += share; // Gab owes her share
+      balances[2][b.type] += 0; // Francine paid → owes nothing
+    }
+  });
 
-  // Sort bills in priority: smaller bills first so debt shifts to rent
-  const sortedBills = ["electric", "water", "internet", "rent"];
+  // Step 3: Apply payments per bill to settle and shift debt/overpayment to rent
+  billTypes.forEach(bt => {
+    // Total owed for this bill
+    const total = balances[1][bt] + balances[2][bt];
 
-  sortedBills.forEach(bt => {
-    const billRows = bills.filter(b => b.type === bt);
+    if (total === 0) return; // Nothing owed, skip
 
-    billRows.forEach(b => {
-      const share = b.amount / 2;
+    // Payments made from DB
+    const payments = bills.filter(b => b.type === bt);
+    payments.forEach(p => {
+      let paymentAmount = p.amount;
 
-      // Calculate initial balances
-      if (b.paid_by === 1) {
-        // Gab paid
-        tableData[1][bt] += 0; // Gab owes 0
-        tableData[2][bt] += share; // Francine owes share
-      } else {
-        tableData[1][bt] += share; // Gab owes share
-        tableData[2][bt] += 0; // Francine owes 0
-      }
+      // Cover the other person's balance first
+      const other = p.paid_by === 1 ? 2 : 1;
+      const otherBalance = balances[other][bt];
+      const appliedToOther = Math.min(paymentAmount, otherBalance);
+      balances[other][bt] -= appliedToOther;
+      paymentAmount -= appliedToOther;
+
+      // Then cover payer's own balance
+      const selfBalance = balances[p.paid_by][bt];
+      const appliedToSelf = Math.min(paymentAmount, selfBalance);
+      balances[p.paid_by][bt] -= appliedToSelf;
+      paymentAmount -= appliedToSelf;
+
+      // Any leftover overpayment shifts to rent
+      balances[p.paid_by].rent -= paymentAmount; // decrease their rent
+      balances[other].rent += paymentAmount; // increase the other rent
     });
 
-    // Apply debt/credit from previous bill
-    tableData[1][bt] -= personDebt[1];
-    tableData[2][bt] -= personDebt[2];
-
-    // Calculate new debt/credit to carry over
-    let over1 = Math.max(0, -tableData[1][bt]);
-    let over2 = Math.max(0, -tableData[2][bt]);
-
-    // Negative balances cannot stay in this bill; move to next (rent last)
-    personDebt[1] = over1;
-    personDebt[2] = over2;
-
-    // Clip balances at 0 for this bill
-    tableData[1][bt] = Math.max(0, tableData[1][bt]);
-    tableData[2][bt] = Math.max(0, tableData[2][bt]);
+    // Clip negatives to zero (bill settled)
+    balances[1][bt] = Math.max(0, balances[1][bt]);
+    balances[2][bt] = Math.max(0, balances[2][bt]);
   });
 
-  // After all bills, apply remaining debt to rent
-  tableData[1].rent -= personDebt[1];
-  tableData[2].rent -= personDebt[2];
-
-  // Calculate totals
+  // Step 4: Calculate totals
   [1,2].forEach(pid => {
-    tableData[pid].total = billTypes.reduce((sum, bt) => sum + tableData[pid][bt], 0);
+    balances[pid].total = billTypes.reduce((sum, bt) => sum + balances[pid][bt], 0);
   });
 
-  // Update HTML
+  // Step 5: Update table
   document.getElementById("gabRow").innerHTML = `
     <td>Gab</td>
-    <td>${tableData[1].rent.toFixed(2)}</td>
-    <td>${tableData[1].electric.toFixed(2)}</td>
-    <td>${tableData[1].water.toFixed(2)}</td>
-    <td>${tableData[1].internet.toFixed(2)}</td>
-    <td>${tableData[1].total.toFixed(2)}</td>
+    <td>${balances[1].rent.toFixed(2)}</td>
+    <td>${balances[1].electric.toFixed(2)}</td>
+    <td>${balances[1].water.toFixed(2)}</td>
+    <td>${balances[1].internet.toFixed(2)}</td>
+    <td>${balances[1].total.toFixed(2)}</td>
   `;
 
   document.getElementById("francineRow").innerHTML = `
     <td>Francine</td>
-    <td>${tableData[2].rent.toFixed(2)}</td>
-    <td>${tableData[2].electric.toFixed(2)}</td>
-    <td>${tableData[2].water.toFixed(2)}</td>
-    <td>${tableData[2].internet.toFixed(2)}</td>
-    <td>${tableData[2].total.toFixed(2)}</td>
+    <td>${balances[2].rent.toFixed(2)}</td>
+    <td>${balances[2].electric.toFixed(2)}</td>
+    <td>${balances[2].water.toFixed(2)}</td>
+    <td>${balances[2].internet.toFixed(2)}</td>
+    <td>${balances[2].total.toFixed(2)}</td>
   `;
 }
 
