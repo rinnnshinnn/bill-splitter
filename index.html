@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Bill Splitter</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Monthly Bills</h1>
+
+<input id="type" placeholder="Bill type">
+<input id="amount" type="number" placeholder="Amount">
+<select id="paidBy">
+  <option value="1">Gab</option>
+  <option value="2">Sibling</option>
+</select>
+<input id="month" placeholder="YYYY-MM">
+
+<button onclick="addBill()">Add Bill</button>
+
+<hr>
+<div id="summary"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
