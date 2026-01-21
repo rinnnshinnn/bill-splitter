@@ -4,8 +4,16 @@ body {
   max-width: 500px;
   margin: auto;
 }
+h1 { text-align: center; }
 input, select, button {
   display: block;
   margin: 10px 0;
   padding: 8px;
+  width: 100%;
+}
+button {
+  cursor: pointer;
+}
+#summary p {
+  font-weight: bold;
 }
