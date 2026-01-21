@@ -4,7 +4,7 @@ body {
   margin: auto;
   padding: 20px;
 }
-h1 {
+h1, h3 {
   text-align: center;
 }
 input, select, button {

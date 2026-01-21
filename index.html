@@ -8,7 +8,20 @@
 <body>
   <h1>Bill Splitter</h1>
 
+  <div class="init">
+    <h3>Initialize Month Balances</h3>
+    <input id="monthInit" placeholder="YYYY-MM">
+    <input id="rentInit" type="number" placeholder="Rent">
+    <input id="electricInit" type="number" placeholder="Electric">
+    <input id="waterInit" type="number" placeholder="Water">
+    <input id="internetInit" type="number" placeholder="Internet">
+    <button onclick="initMonth()">Set Balances</button>
+  </div>
+
+  <hr>
+
   <div class="form">
+    <h3>Add Payment</h3>
     <input id="type" placeholder="Bill type (rent, electric, water, internet)">
     <input id="amount" type="number" placeholder="Amount">
     <select id="paidBy">
@@ -16,7 +29,7 @@
       <option value="2">Francine</option>
     </select>
     <input id="month" placeholder="YYYY-MM">
-    <button onclick="addBill()">Add Bill</button>
+    <button onclick="addPayment()">Add Payment</button>
   </div>
 
   <hr>

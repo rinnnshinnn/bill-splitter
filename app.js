@@ -3,15 +3,39 @@ import { supabase } from "./supabase.js";
 const billTypes = ["rent", "electric", "water", "internet"];
 const personIds = { 1: "Gab", 2: "Francine" };
 
-// Initial fetch of bills from DB
-async function fetchBills() {
-  const { data: bills, error } = await supabase.from("bills").select("*");
-  if (error) return console.error(error);
-  return bills || [];
-}
+// Initialize balances for a month
+window.initMonth = async function() {
+  const month = document.getElementById("monthInit").value;
+  if (!month) return alert("Enter month!");
 
-// Add a bill
-window.addBill = async function() {
+  const amounts = {
+    rent: Number(document.getElementById("rentInit").value) || 0,
+    electric: Number(document.getElementById("electricInit").value) || 0,
+    water: Number(document.getElementById("waterInit").value) || 0,
+    internet: Number(document.getElementById("internetInit").value) || 0,
+  };
+
+  // Delete existing bills for this month
+  await supabase.from("bills").delete().eq("month", month);
+
+  // Insert baseline for each person
+  const inserts = [];
+  for (const bt of billTypes) {
+    const share = amounts[bt] / 2;
+    // Gab
+    inserts.push({ type: bt, amount: share, paid_by: 0, month });
+    // Francine
+    inserts.push({ type: bt, amount: share, paid_by: 0, month });
+  }
+
+  const { error } = await supabase.from("bills").insert(inserts);
+  if (error) console.error(error);
+
+  calculate(month);
+};
+
+// Add a payment
+window.addPayment = async function() {
   const type = document.getElementById("type").value.toLowerCase();
   const amount = Number(document.getElementById("amount").value);
   const paid_by = Number(document.getElementById("paidBy").value);
@@ -20,81 +44,76 @@ window.addBill = async function() {
   if (!billTypes.includes(type)) return alert("Bill type must be rent, electric, water, or internet!");
   if (!amount || !month) return alert("Fill all fields!");
 
-  // Insert into database
-  const { error } = await supabase.from("bills").insert([{ type, amount, paid_by, month }]);
+  // Fetch balances for this bill/month
+  const { data: balances, error } = await supabase
+    .from("bills")
+    .select("*")
+    .eq("month", month)
+    .eq("type", type);
   if (error) return console.error(error);
 
-  document.getElementById("type").value = "";
-  document.getElementById("amount").value = "";
-  document.getElementById("month").value = "";
+  let remainingPayment = amount;
 
-  calculate();
+  // First settle this bill
+  for (const b of balances) {
+    const bal = b.amount;
+    const applied = Math.min(remainingPayment, bal);
+    remainingPayment -= applied;
+
+    await supabase
+      .from("bills")
+      .update({ amount: bal - applied, paid_by: paid_by })
+      .eq("id", b.id);
+  }
+
+  // If payment leftover, shift to rent
+  if (remainingPayment > 0) {
+    const { data: rentBalances } = await supabase
+      .from("bills")
+      .select("*")
+      .eq("month", month)
+      .eq("type", "rent");
+
+    for (const r of rentBalances) {
+      const applied = Math.min(remainingPayment, r.amount);
+      remainingPayment -= applied;
+      await supabase
+        .from("bills")
+        .update({ amount: r.amount - applied, paid_by })
+        .eq("id", r.id);
+      if (remainingPayment <= 0) break;
+    }
+  }
+
+  calculate(month);
 };
 
-// Calculate balances with overpayment/debt shifting
-async function calculate() {
-  const bills = await fetchBills();
-  if (!bills) return;
+// Calculate and display table
+async function calculate(monthFilter) {
+  const { data: bills, error } = await supabase.from("bills").select("*");
+  if (error) return console.error(error);
 
-  // Step 1: Initialize balances per person
-  const balances = {
-    1: { rent: 0, electric: 0, water: 0, internet: 0 },
-    2: { rent: 0, electric: 0, water: 0, internet: 0 },
-  };
+  const filtered = monthFilter ? bills.filter(b => b.month === monthFilter) : bills;
 
-  // Step 2: Sum all bills
-  bills.forEach(b => {
-    const share = b.amount / 2;
-    if (b.paid_by === 1) {
-      balances[1][b.type] += 0; // Gab paid → owes nothing
-      balances[2][b.type] += share; // Francine owes her share
-    } else {
-      balances[1][b.type] += share; // Gab owes her share
-      balances[2][b.type] += 0; // Francine paid → owes nothing
-    }
-  });
-
-  // Step 3: Apply payments per bill to settle and shift debt/overpayment to rent
+  const balances = { 1: {}, 2: {} };
   billTypes.forEach(bt => {
-    // Total owed for this bill
-    const total = balances[1][bt] + balances[2][bt];
-
-    if (total === 0) return; // Nothing owed, skip
-
-    // Payments made from DB
-    const payments = bills.filter(b => b.type === bt);
-    payments.forEach(p => {
-      let paymentAmount = p.amount;
-
-      // Cover the other person's balance first
-      const other = p.paid_by === 1 ? 2 : 1;
-      const otherBalance = balances[other][bt];
-      const appliedToOther = Math.min(paymentAmount, otherBalance);
-      balances[other][bt] -= appliedToOther;
-      paymentAmount -= appliedToOther;
-
-      // Then cover payer's own balance
-      const selfBalance = balances[p.paid_by][bt];
-      const appliedToSelf = Math.min(paymentAmount, selfBalance);
-      balances[p.paid_by][bt] -= appliedToSelf;
-      paymentAmount -= appliedToSelf;
-
-      // Any leftover overpayment shifts to rent
-      balances[p.paid_by].rent -= paymentAmount; // decrease their rent
-      balances[other].rent += paymentAmount; // increase the other rent
-    });
-
-    // Clip negatives to zero (bill settled)
-    balances[1][bt] = Math.max(0, balances[1][bt]);
-    balances[2][bt] = Math.max(0, balances[2][bt]);
+    balances[1][bt] = 0;
+    balances[2][bt] = 0;
   });
 
-  // Step 4: Calculate totals
+  // Fill balances
+  filtered.forEach(b => {
+    const pid = b.paid_by || (b.id % 2 === 0 ? 2 : 1); // default to baseline person
+    if (pid === 1) balances[1][b.type] += b.amount;
+    if (pid === 2) balances[2][b.type] += b.amount;
+  });
+
+  // Compute totals
   [1,2].forEach(pid => {
     balances[pid].total = billTypes.reduce((sum, bt) => sum + balances[pid][bt], 0);
   });
 
-  // Step 5: Update table
+  // Update HTML
   document.getElementById("gabRow").innerHTML = `
     <td>Gab</td>
     <td>${balances[1].rent.toFixed(2)}</td>
@@ -103,7 +122,6 @@ async function calculate() {
     <td>${balances[1].internet.toFixed(2)}</td>
     <td>${balances[1].total.toFixed(2)}</td>
   `;
-
   document.getElementById("francineRow").innerHTML = `
     <td>Francine</td>
     <td>${balances[2].rent.toFixed(2)}</td>
@@ -114,5 +132,5 @@ async function calculate() {
   `;
 }
 
-// Initial calculation on load
+// Initial calculation
 calculate();
