@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
   <title>Bill Splitter</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -8,7 +9,7 @@
   <h1>Bill Splitter</h1>
 
   <div class="form">
-    <input id="type" placeholder="Bill type (rent, electric, etc.)">
+    <input id="type" placeholder="Bill type (rent, electric, water, internet)">
     <input id="amount" type="number" placeholder="Amount">
     <select id="paidBy">
       <option value="1">Gab</option>
@@ -19,7 +20,37 @@
   </div>
 
   <hr>
-  <div id="summary"></div>
+
+  <table id="billTable">
+    <thead>
+      <tr>
+        <th>Person</th>
+        <th>Rent</th>
+        <th>Electric</th>
+        <th>Water</th>
+        <th>Internet</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr id="gabRow">
+        <td>Gab</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+      <tr id="francineRow">
+        <td>Francine</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+        <td>0</td>
+      </tr>
+    </tbody>
+  </table>
 
   <script type="module" src="app.js"></script>
 </body>
